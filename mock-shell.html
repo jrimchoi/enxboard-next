@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="utf-8">
+    <title>3DDashboard — ENXBoardNext</title>
+    <style>
+        html, body {
+            margin: 0;
+            height: 100%;
+            background: #e8eaed;
+            color: #3d3d3d;
+            font-family: Arial, Helvetica, sans-serif;
+        }
+        .dashboard {
+            min-height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+        .compass {
+            height: 48px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 0 16px;
+            background: #1f2a44;
+            color: #fff;
+        }
+        .compass strong {
+            font-weight: 600;
+        }
+        .stage {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            padding: 24px 16px 32px;
+        }
+        .panel {
+            width: 800px;
+            background: #fff;
+            border: 1px solid #c8ccd0;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+        }
+        .titlebar {
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 12px;
+            background: #f4f5f6;
+            border-bottom: 1px solid #d5d8dc;
+        }
+        .titlebar h1 {
+            margin: 0;
+            font-size: 14px;
+            font-weight: 600;
+        }
+        .app-id {
+            font-size: 12px;
+            color: #5b6770;
+        }
+        iframe {
+            display: block;
+            width: 800px;
+            height: 600px;
+            border: 0;
+            background: #fff;
+        }
+    </style>
+    <script>
+        (function () {
+            var APP_ID = "ENXBoardNext";
+            var values = {};
+            var handlers = {};
+            var widget = {
+                id: "widget-enxboardnext",
+                appId: APP_ID,
+                title: "ENXBoard",
+                preferences: [],
+                getValue: function (key) {
+                    return values[key];
+                },
+                setValue: function (key, value) {
+                    values[key] = value;
+                    return value;
+                },
+                deleteValue: function (key) {
+                    delete values[key];
+                },
+                addEvent: function (name, handler) {
+                    if (!handlers[name]) {
+                        handlers[name] = [];
+                    }
+                    handlers[name].push(handler);
+                },
+                setTitle: function (title) {
+                    widget.title = title;
+                    var heading = document.getElementById("shell-title");
+                    if (heading) {
+                        heading.textContent = title;
+                    }
+                }
+            };
+
+            function frameWindow() {
+                var frame = document.getElementById("widget-frame");
+                return frame ? frame.contentWindow : null;
+            }
+
+            function postToWidget(type, data) {
+                var message = {
+                    source: "3DDashboard",
+                    appId: APP_ID,
+                    widgetId: widget.id,
+                    type: type,
+                    data: data || {}
+                };
+                var child = frameWindow();
+                if (child) {
+                    child.postMessage(message, "*");
+                }
+                (handlers[type] || []).forEach(function (handler) {
+                    handler(message.data);
+                });
+                return message;
+            }
+
+            window.appId = APP_ID;
+            window.widget = widget;
+            window.dashboard = {
+                appId: APP_ID,
+                widget: widget,
+                postToWidget: postToWidget
+            };
+
+            window.addEventListener("message", function (event) {
+                if (event.source !== frameWindow()) {
+                    return;
+                }
+                var payload = event.data || {};
+                if (payload.type === "setTitle" && payload.title) {
+                    widget.setTitle(payload.title);
+                }
+                (handlers[payload.type] || []).forEach(function (handler) {
+                    handler(payload.data === undefined ? payload : payload.data);
+                });
+            });
+
+            window.addEventListener("DOMContentLoaded", function () {
+                document.getElementById("widget-frame").addEventListener("load", function () {
+                    postToWidget("onLoad", { appId: APP_ID });
+                });
+            });
+        })();
+    </script>
+</head>
+<body>
+    <div class="dashboard">
+        <header class="compass">
+            <strong>3DDashboard</strong>
+            <span>목 셸</span>
+        </header>
+        <main class="stage">
+            <section class="panel">
+                <div class="titlebar">
+                    <h1 id="shell-title">ENXBoard</h1>
+                    <span class="app-id">ENXBoardNext</span>
+                </div>
+                <iframe id="widget-frame" title="ENXBoardNext" width="800" height="600" src="out/index.html"></iframe>
+            </section>
+        </main>
+    </div>
+</body>
+</html>
