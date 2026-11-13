@@ -8,7 +8,7 @@
 
 https://stackblitz.com/fork/github/jrimchoi/enxboard-next
 
-`npm install` 뒤 `npm run dev`가 실행된다. 미리보기는 `/`다.
+`npm install` 뒤 `npm run dev`가 실행된다. 미리보기는 `/`다. 대시보드 목 셸은 `/mock-shell.html`이다. 셸은 `public`에 있어서 Next가 그대로 주고, iframe은 개발 서버의 `/`를 연다.
 
 ## 로컬
 
@@ -26,6 +26,7 @@ npm run dev
 | `lib/controller.js` | 명령 |
 | `lib/data.js` | 글 모델, 목록, 저장 |
 | `lib/widget.js` | 대시보드 위젯 연결 |
+| `public/mock-shell.html` | 대시보드 목 셸. `/mock-shell.html` |
 | `public/data/posts.json` | 목 데이터 |
 | `public/core` | 아이콘 CSS와 글꼴 |
 | `styles/board.css` | 화면 골격. `pages/_app.js`가 번들로 넣는다 |
