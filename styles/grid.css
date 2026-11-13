@@ -1,5 +1,6 @@
 .enx-grid {
-    width: 100%;
+    width: max-content;
+    max-width: none;
     border-collapse: collapse;
     margin: 12px 0;
 }
@@ -88,7 +89,7 @@
     margin-bottom: 4px;
 }
 
-/* team-flow ScrollableTable이 우선이다. 표는 하나고, 헤더는 붙고, 칸은 헤더와 본문이 같은 너비다.
+/* 표는 하나고 헤더는 붙는다. 표 너비는 칸 너비의 합이다. 열을 넓히면 표가 늘어나고 프레임이 가로로 스크롤된다.
    sticky 헤더가 있으면 브라우저 가로 막대는 보여도 마우스로 안 움직인다. 가로 이동은 enx-hscroll이 맡는다. */
 .enx-grid-frame {
     width: 100%;
@@ -158,10 +159,11 @@
 
 .scrollable-table-container-single table,
 .enx-grid-scroll > .enx-grid {
-    width: fit-content;
-    min-width: 100%;
+    width: max-content;
+    min-width: max-content;
+    max-width: none;
     margin: 0;
-    table-layout: auto;
+    table-layout: fixed;
     border-collapse: separate;
     border-spacing: 0;
 }

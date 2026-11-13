@@ -181,7 +181,7 @@ export function DataGrid(props) {
         if (!column.pinned) return undefined;
         var left = (props.showRowIndexFlag === false ? 0 : 44) + (props.showSelectionCheckBoxesFlag === false ? 0 : 36);
         for (var i = 0; i < index; i += 1) {
-            if (prepared.visible[i].pinned) left += prepared.visible[i].width;
+            if (prepared.visible[i].pinned) left += shownWidth(prepared.visible[i]);
         }
         return left + "px";
     }
@@ -197,6 +197,11 @@ export function DataGrid(props) {
             cell.style.minWidth = px;
             cell.style.maxWidth = px;
         });
+        var total = 0;
+        Array.prototype.forEach.call(table.rows[0].cells, function (cell) { total += parseFloat(cell.style.width) || 0; });
+        table.style.width = total + "px";
+        table.style.minWidth = total + "px";
+        table.style.maxWidth = total + "px";
     }
 
     function onResizeDown(event, column) {
@@ -264,8 +269,16 @@ export function DataGrid(props) {
     var showChecks = props.showSelectionCheckBoxesFlag !== false;
     var showMenuColumn = props.showContextualMenuColumnFlag !== false;
     var allChecked = viewRows.length > 0 && viewRows.every(function (row) { return selected[row.id]; });
+    function shownWidth(column) {
+        return dragWidth && dragWidth.dataIndex === column.dataIndex ? dragWidth.width : column.width;
+    }
+    function tablePixelWidth() {
+        var width = (showIndex ? 44 : 0) + (showChecks ? 36 : 0) + (showMenuColumn ? 44 : 0);
+        prepared.visible.forEach(function (column) { width += shownWidth(column); });
+        return width;
+    }
     function columnBox(column, index) {
-        var width = dragWidth && dragWidth.dataIndex === column.dataIndex ? dragWidth.width : column.width;
+        var width = shownWidth(column);
         return { width: width, minWidth: width, maxWidth: width, left: stickyLeft(column, index) };
     }
 
@@ -295,7 +308,7 @@ export function DataGrid(props) {
             </div>
             <div className="enx-grid-frame">
             <div ref={scrollerRef} className="enx-grid-scroll scrollable-table-container-single" onScroll={measureHBar}>
-                <table className={"enx-grid" + (props.showColumnBorderFlag === false ? "" : " borders") + (props.showAlternateBackgroundFlag === false ? "" : " stripes")}>
+                <table className={"enx-grid" + (props.showColumnBorderFlag === false ? "" : " borders") + (props.showAlternateBackgroundFlag === false ? "" : " stripes")} style={{ width: tablePixelWidth(), minWidth: tablePixelWidth(), maxWidth: tablePixelWidth() }}>
                     <thead>
                         <tr>
                             {showIndex ? <th className="index" style={{ width: 44, minWidth: 44, maxWidth: 44 }}></th> : null}
