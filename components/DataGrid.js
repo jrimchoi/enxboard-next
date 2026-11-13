@@ -48,6 +48,13 @@ export function DataGrid(props) {
     var editing = editState[0];
     var setEditing = editState[1];
     var rootRef = useRef(null);
+    var scrollerRef = useRef(null);
+    var hBarState = useState({ overflow: false, thumbWidth: 32, thumbLeft: 0 });
+    var hBar = hBarState[0];
+    var setHBar = hBarState[1];
+    var hBarRef = useRef(hBar);
+    hBarRef.current = hBar;
+    var measureRef = useRef(function () {});
 
     var prepared = useMemo(function () { return layoutColumns(columns, layout); }, [columns, layout]);
     var viewRows = useMemo(function () { return visibleRows(rows, sortModel, expanded); }, [rows, sortModel, expanded]);
@@ -67,6 +74,86 @@ export function DataGrid(props) {
             if (text) cell.title = text;
         });
     });
+
+    function measureHBar() {
+        var el = scrollerRef.current;
+        if (!el) return;
+        var max = el.scrollWidth - el.clientWidth;
+        var overflow = max > 1;
+        var track = el.clientWidth;
+        var thumbWidth = overflow ? Math.max(32, Math.round((track * el.clientWidth) / el.scrollWidth)) : 0;
+        var thumbLeft = overflow ? Math.round((el.scrollLeft / max) * Math.max(0, track - thumbWidth)) : 0;
+        var prev = hBarRef.current;
+        if (prev.overflow === overflow && prev.thumbWidth === thumbWidth && prev.thumbLeft === thumbLeft) return;
+        var next = { overflow: overflow, thumbWidth: thumbWidth, thumbLeft: thumbLeft };
+        hBarRef.current = next;
+        setHBar(next);
+    }
+    measureRef.current = measureHBar;
+
+    function onHScrollDown(event) {
+        var el = scrollerRef.current;
+        if (!el || event.button !== 0) return;
+        event.preventDefault();
+        event.stopPropagation();
+        var track = event.currentTarget.getBoundingClientRect();
+        var max = el.scrollWidth - el.clientWidth;
+        var thumb = hBarRef.current.thumbWidth;
+        var travel = Math.max(1, track.width - thumb);
+        var pointer = event.clientX - track.left;
+        var onThumb = pointer >= hBarRef.current.thumbLeft && pointer <= hBarRef.current.thumbLeft + thumb;
+        if (!onThumb) {
+            el.scrollLeft = Math.max(0, Math.min(max, ((pointer - thumb / 2) / travel) * max));
+            measureRef.current();
+        }
+        var startX = event.clientX;
+        var startLeft = el.scrollLeft;
+        event.currentTarget.classList.add("dragging");
+        function move(moveEvent) {
+            el.scrollLeft = Math.max(0, Math.min(max, startLeft + ((moveEvent.clientX - startX) * max) / travel));
+            measureRef.current();
+        }
+        function up() {
+            document.removeEventListener("mousemove", move);
+            document.removeEventListener("mouseup", up);
+            if (event.currentTarget) event.currentTarget.classList.remove("dragging");
+        }
+        document.addEventListener("mousemove", move);
+        document.addEventListener("mouseup", up);
+    }
+
+    useEffect(function () {
+        var el = scrollerRef.current;
+        if (!el) return;
+        function onWheel(event) {
+            var box = scrollerRef.current;
+            if (!box) return;
+            var max = box.scrollWidth - box.clientWidth;
+            if (max <= 0) return;
+            var delta = 0;
+            if (Math.abs(event.deltaX) > Math.abs(event.deltaY)) delta = event.deltaX;
+            else if (event.shiftKey) delta = event.deltaY;
+            else if (box.scrollHeight <= box.clientHeight + 1) delta = event.deltaY;
+            if (!delta) return;
+            event.preventDefault();
+            box.scrollLeft = Math.max(0, Math.min(max, box.scrollLeft + delta));
+            measureRef.current();
+        }
+        function measure() { measureRef.current(); }
+        el.addEventListener("wheel", onWheel, { passive: false });
+        el.addEventListener("scroll", measure);
+        var observer = window.ResizeObserver ? new ResizeObserver(measure) : null;
+        if (observer) {
+            observer.observe(el);
+            if (el.firstElementChild) observer.observe(el.firstElementChild);
+        }
+        measure();
+        return function () {
+            el.removeEventListener("wheel", onWheel);
+            el.removeEventListener("scroll", measure);
+            if (observer) observer.disconnect();
+        };
+    }, []);
 
     function persist(next) {
         setLayout(next);
@@ -190,7 +277,8 @@ export function DataGrid(props) {
             <div className="enx-grid-tools">
                 <button type="button" onClick={function (event) { openMenu(event, "columns", null); }}>열</button>
             </div>
-            <div className="enx-grid-scroll scrollable-table-container-single">
+            <div className="enx-grid-frame">
+            <div ref={scrollerRef} className="enx-grid-scroll scrollable-table-container-single" onScroll={measureHBar}>
                 <table className={"enx-grid" + (props.showColumnBorderFlag === false ? "" : " borders") + (props.showAlternateBackgroundFlag === false ? "" : " stripes")}>
                     <thead>
                         <tr>
@@ -250,6 +338,12 @@ export function DataGrid(props) {
                         }) : <tr><td colSpan={prepared.visible.length + (showIndex ? 1 : 0) + (showChecks ? 1 : 0) + (showMenuColumn ? 1 : 0)} className="empty">{props.emptyText || "표시할 행이 없습니다."}</td></tr>}
                     </tbody>
                 </table>
+            </div>
+            {hBar.overflow ? (
+                <div className="enx-hscroll" role="scrollbar" aria-orientation="horizontal" aria-label="가로 스크롤" onMouseDown={onHScrollDown}>
+                    <div className="enx-hscroll-thumb" style={{ width: hBar.thumbWidth, left: hBar.thumbLeft }} />
+                </div>
+            ) : null}
             </div>
             {menu ? (
                 <div className="enx-grid-menu" style={{ left: menu.x, top: menu.y }} onClick={function (event) { event.stopPropagation(); }}>
