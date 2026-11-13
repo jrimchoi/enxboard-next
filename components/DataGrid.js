@@ -1,29 +1,63 @@
 /*
- * Next용 DataGridView다. JSX는 Next가 페이지 번들로 넣고, 트리·정렬·선택 계산은 lib/grid.js가 한다.
- * Vue는 DataGrid.vue, React는 DataGrid.jsx다. 모델 계산은 세 파일이 같다.
+ * Next용 DataGridView다. 열 너비, 순서, 고정, 필터, 정렬, 선택은 lib/grid.js가 계산한다.
+ * JSX는 Next가 페이지 번들로 넣는다. Vue와 React도 같은 계산을 쓴다.
  */
-import { useState } from "react";
-import { cellValue, nextSort, selectedNodes, toggleSelection, visibleRows } from "../lib/grid";
+import { useEffect, useMemo, useState } from "react";
+import {
+    cellValue,
+    estimateWidth,
+    layoutColumns,
+    loadLayout,
+    moveColumn,
+    nextSort,
+    resizeColumn,
+    saveLayout,
+    selectRange,
+    selectedNodes,
+    toggleFlag,
+    toggleSelection,
+    visibleRows,
+} from "../lib/grid";
 
 export function DataGrid(props) {
     var rows = props.rows || [];
     var columns = props.columns || [];
     var sortModel = props.sortModel || [];
-    var rowSelection = props.rowSelection || "single";
+    var filters = props.filters || {};
+    var layoutState = useState(function () { return loadLayout(props.identifier); });
+    var layout = layoutState[0];
+    var setLayout = layoutState[1];
     var expandedState = useState({});
     var expanded = expandedState[0];
     var setExpanded = expandedState[1];
     var selectedState = useState({});
     var selected = selectedState[0];
     var setSelected = selectedState[1];
-    var viewRows = visibleRows(rows, sortModel, expanded);
+    var anchorState = useState("");
+    var anchor = anchorState[0];
+    var setAnchor = anchorState[1];
+    var menuState = useState(null);
+    var menu = menuState[0];
+    var setMenu = menuState[1];
+    var dragState = useState({ column: "", row: "" });
+    var drag = dragState[0];
+    var setDrag = dragState[1];
+    var editState = useState(null);
+    var editing = editState[0];
+    var setEditing = editState[1];
 
-    function sortMark(column) {
-        var current = sortModel.filter(function (item) {
-            return item.dataIndex === column.dataIndex;
-        })[0];
-        if (!current) return "";
-        return current.sort === "desc" ? "내림차순" : "오름차순";
+    var prepared = useMemo(function () { return layoutColumns(columns, layout); }, [columns, layout]);
+    var viewRows = useMemo(function () { return visibleRows(rows, sortModel, expanded); }, [rows, sortModel, expanded]);
+
+    useEffect(function () {
+        function close() { setMenu(null); }
+        window.addEventListener("click", close);
+        return function () { window.removeEventListener("click", close); };
+    }, []);
+
+    function persist(next) {
+        setLayout(next);
+        if (props.identifier) saveLayout(props.identifier, next);
     }
 
     function publishSelection(nextSelected) {
@@ -31,125 +65,181 @@ export function DataGrid(props) {
         if (props.onSelect) props.onSelect(selectedNodes(rows, nextSelected));
     }
 
+    function sortMark(column) {
+        var index = sortModel.findIndex(function (item) { return item.dataIndex === column.dataIndex; });
+        if (index < 0) return "";
+        var name = sortModel[index].sort === "desc" ? "내림차순" : "오름차순";
+        return sortModel.length > 1 ? name + " " + (index + 1) : name;
+    }
+
+    function stickyLeft(column, index) {
+        if (!column.pinned) return undefined;
+        var left = (props.showRowIndexFlag === false ? 0 : 44) + (props.showSelectionCheckBoxesFlag === false ? 0 : 36);
+        for (var i = 0; i < index; i += 1) {
+            if (prepared.visible[i].pinned) left += prepared.visible[i].width;
+        }
+        return left + "px";
+    }
+
+    function onResizeDown(event, column) {
+        if (column.resizableFlag === false) return;
+        event.preventDefault();
+        event.stopPropagation();
+        var startX = event.clientX;
+        var startWidth = column.width;
+        function move(moveEvent) {
+            persist(resizeColumn(layout, column.dataIndex, startWidth + moveEvent.clientX - startX));
+        }
+        function up() {
+            window.removeEventListener("pointermove", move);
+            window.removeEventListener("pointerup", up);
+        }
+        window.addEventListener("pointermove", move);
+        window.addEventListener("pointerup", up);
+    }
+
+    function fit(column) {
+        var values = viewRows.map(function (row) { return cellValue(column, row.node).label; });
+        persist(resizeColumn(layout, column.dataIndex, estimateWidth(column.text, values)));
+    }
+
+    function openMenu(event, kind, payload) {
+        event.preventDefault();
+        event.stopPropagation();
+        setMenu({ kind: kind, x: event.clientX, y: event.clientY, payload: payload });
+    }
+
+    function onMenu(action) {
+        var column = menu && menu.payload;
+        if (action === "asc" || action === "desc") props.onSort && props.onSort([{ dataIndex: column.dataIndex, sort: action === "desc" ? "desc" : "asc" }]);
+        else if (action === "clear-sort") props.onSort && props.onSort(sortModel.filter(function (item) { return item.dataIndex !== column.dataIndex; }));
+        else if (action === "hide" || action === "pin") persist(toggleFlag(layout, column.dataIndex, action === "hide" ? "hidden" : "pinned"));
+        else if (action === "fit") fit(column);
+        else if (action === "reset-width") {
+            var widths = Object.assign({}, layout.widths);
+            delete widths[column.dataIndex];
+            persist(Object.assign({}, layout, { widths: widths }));
+        } else if (action === "open" && props.onActivate) {
+            props.onActivate({ node: column.node, column: { dataIndex: "tree" }, value: { label: column.node.title || column.node.label } });
+        }
+        setMenu(null);
+    }
+
+    var showIndex = props.showRowIndexFlag !== false;
+    var showChecks = props.showSelectionCheckBoxesFlag !== false;
+    var showMenuColumn = props.showContextualMenuColumnFlag !== false;
+    var tableWidth = Math.max(prepared.visible.reduce(function (sum, column) { return sum + column.width; }, 120), 640);
+    var allChecked = viewRows.length > 0 && viewRows.every(function (row) { return selected[row.id]; });
+
     return (
-        <table className="enx-grid">
-            <thead>
-                <tr>
-                    {props.showSelectionCheckBoxesFlag ? <th></th> : null}
-                    {columns.map(function (column) {
-                        return (
-                            <th key={column.dataIndex}>
-                                <button
-                                    type="button"
-                                    className="header"
-                                    onClick={function () {
-                                        if (column.sortableFlag === false) return;
-                                        if (props.onSort) props.onSort(nextSort(sortModel, column.dataIndex));
-                                    }}
-                                >
-                                    {column.text}
-                                    {sortMark(column) ? <span className="sort">{sortMark(column)}</span> : null}
-                                </button>
-                            </th>
-                        );
-                    })}
-                </tr>
-            </thead>
-            <tbody>
-                {viewRows.length ? (
-                    viewRows.map(function (row) {
-                        return (
-                            <tr
-                                key={row.id}
-                                className={selected[row.id] ? "selected" : undefined}
-                                onClick={function () {
-                                    publishSelection(toggleSelection(selected, row.id, rowSelection));
-                                }}
-                            >
-                                {props.showSelectionCheckBoxesFlag ? (
-                                    <td>
-                                        <input
-                                            type="checkbox"
-                                            checked={!!selected[row.id]}
-                                            onClick={function (event) {
-                                                event.stopPropagation();
-                                                publishSelection(toggleSelection(selected, row.id, rowSelection));
-                                            }}
-                                            onChange={function () {}}
-                                        />
-                                    </td>
-                                ) : null}
-                                {columns.map(function (column) {
-                                    var value = cellValue(column, row.node);
-                                    if (column.dataIndex === "tree") {
+        <div
+            className="enx-grid-wrap"
+            tabIndex={0}
+            onKeyDown={function (event) {
+                if (!viewRows.length) return;
+                var ids = viewRows.map(function (row) { return row.id; });
+                var current = ids.indexOf(anchor);
+                if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                    event.preventDefault();
+                    var nextIndex = event.key === "ArrowDown" ? Math.min(ids.length - 1, current + 1) : Math.max(0, current < 0 ? 0 : current - 1);
+                    setAnchor(ids[nextIndex]);
+                    publishSelection(toggleSelection({}, ids[nextIndex], "single"));
+                } else if (event.key === "Enter" && anchor) {
+                    var row = viewRows.filter(function (item) { return item.id === anchor; })[0];
+                    var column = prepared.visible.filter(function (item) { return item.dataIndex === "tree"; })[0] || prepared.visible[0];
+                    if (row && column && props.onActivate) props.onActivate({ node: row.node, column: column, value: cellValue(column, row.node) });
+                }
+            }}
+        >
+            <div className="enx-grid-tools">
+                <button type="button" onClick={function (event) { openMenu(event, "columns", null); }}>열</button>
+            </div>
+            <div className="enx-grid-scroll">
+                <table className={"enx-grid" + (props.showColumnBorderFlag === false ? "" : " borders") + (props.showAlternateBackgroundFlag === false ? "" : " stripes")} style={{ width: tableWidth }}>
+                    <colgroup>
+                        {showIndex ? <col style={{ width: 44 }} /> : null}
+                        {showChecks ? <col style={{ width: 36 }} /> : null}
+                        {prepared.visible.map(function (column) { return <col key={column.dataIndex} style={{ width: column.width }} />; })}
+                        {showMenuColumn ? <col style={{ width: 44 }} /> : null}
+                    </colgroup>
+                    <thead>
+                        <tr>
+                            {showIndex ? <th></th> : null}
+                            {showChecks ? <th>{props.rowSelection === "single" ? null : <input type="checkbox" checked={allChecked} onChange={function () {}} onClick={function (event) { event.stopPropagation(); var next = {}; if (!allChecked) viewRows.forEach(function (row) { next[row.id] = true; }); publishSelection(next); }} />}</th> : null}
+                            {prepared.visible.map(function (column, index) {
+                                return (
+                                    <th key={column.dataIndex} className={column.pinned ? "pinned" : undefined} style={{ left: stickyLeft(column, index) }} onDragOver={function (event) { event.preventDefault(); }} onDrop={function (event) { event.preventDefault(); if (!drag.column || drag.column === column.dataIndex) return; persist(moveColumn(layout, prepared.order, drag.column, column.dataIndex)); setDrag({ column: "", row: "" }); }} onContextMenu={function (event) { openMenu(event, "header", column); }}>
+                                        <button type="button" className="header" draggable={props.columnDragEnabledFlag !== false} onDragStart={function (event) { setDrag({ column: column.dataIndex, row: "" }); event.dataTransfer.setData("text/plain", column.dataIndex); }} onClick={function (event) { if (column.sortableFlag === false || !props.onSort) return; props.onSort(nextSort(sortModel, column.dataIndex, event.shiftKey)); }}>
+                                            {column.text}
+                                            {sortMark(column) ? <span className="sort">{sortMark(column)}</span> : null}
+                                        </button>
+                                        {column.resizableFlag ? <button type="button" className="resizer" aria-label="열 너비" onPointerDown={function (event) { onResizeDown(event, column); }} onDoubleClick={function (event) { event.preventDefault(); event.stopPropagation(); fit(column); }} /> : null}
+                                    </th>
+                                );
+                            })}
+                            {showMenuColumn ? <th></th> : null}
+                        </tr>
+                        <tr className="filters">
+                            {showIndex ? <th></th> : null}
+                            {showChecks ? <th></th> : null}
+                            {prepared.visible.map(function (column) {
+                                return (
+                                    <th key={"filter-" + column.dataIndex}>
+                                        <input value={filters[column.dataIndex] || ""} placeholder={column.typeRepresentation === "number" ? "> 10" : "필터"} onClick={function (event) { event.stopPropagation(); }} onChange={function (event) { if (!props.onFilter) return; var next = Object.assign({}, filters); if (event.target.value) next[column.dataIndex] = event.target.value; else delete next[column.dataIndex]; props.onFilter(next); }} />
+                                    </th>
+                                );
+                            })}
+                            {showMenuColumn ? <th></th> : null}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {viewRows.length ? viewRows.map(function (row, rowIndex) {
+                            return (
+                                <tr key={row.id} className={(selected[row.id] ? "selected " : "") + (props.showAlternateBackgroundFlag !== false && rowIndex % 2 === 1 ? "alt" : "")} onClick={function (event) { if ((props.rowSelection || "multiple") === "multiple" && event.shiftKey && anchor) { publishSelection(selectRange(viewRows.map(function (item) { return item.id; }), anchor, row.id)); return; } setAnchor(row.id); publishSelection(toggleSelection(selected, row.id, props.rowSelection || "multiple")); }} onDragOver={function (event) { event.preventDefault(); }} onDrop={function (event) { event.preventDefault(); var from = drag.row; setDrag({ column: "", row: "" }); if (!from || from === row.id || !props.onReorder) return; var source = viewRows.filter(function (item) { return item.id === from; })[0]; if (!source || source.parentId !== row.parentId) return; props.onReorder({ id: from, beforeId: row.id }); }}>
+                                    {showIndex ? <td className="index">{props.rowDragEnabledFlag === false ? null : <button type="button" className="drag" draggable onDragStart={function (event) { event.stopPropagation(); setDrag({ column: "", row: row.id }); event.dataTransfer.setData("text/plain", row.id); }} onClick={function (event) { event.stopPropagation(); }}>≡</button>}{rowIndex + 1}</td> : null}
+                                    {showChecks ? <td><input type="checkbox" checked={!!selected[row.id]} onChange={function () {}} onClick={function (event) { event.stopPropagation(); setAnchor(row.id); publishSelection(toggleSelection(selected, row.id, props.rowSelection || "multiple")); }} /></td> : null}
+                                    {prepared.visible.map(function (column, index) {
+                                        var value = cellValue(column, row.node);
+                                        var query = String(props.findQuery || "").trim().toLowerCase();
+                                        var isMatch = query && String(value.label || "").toLowerCase().indexOf(query) !== -1;
+                                        var isEditing = editing && editing.id === row.id && editing.dataIndex === column.dataIndex;
                                         return (
-                                            <td key={column.dataIndex}>
-                                                <div className="tree-cell" style={{ paddingLeft: row.depth * 16 }}>
-                                                    {row.hasChildren ? (
-                                                        <button
-                                                            type="button"
-                                                            className={row.expanded ? "twist expanded" : "twist"}
-                                                            aria-expanded={row.expanded ? "true" : "false"}
-                                                            onClick={function (event) {
-                                                                event.stopPropagation();
-                                                                setExpanded(function (current) {
-                                                                    var next = Object.assign({}, current);
-                                                                    next[row.id] = !row.expanded;
-                                                                    return next;
-                                                                });
-                                                            }}
-                                                        >
-                                                            <span className="mark" />
-                                                        </button>
-                                                    ) : (
-                                                        <span className="twist-gap" />
-                                                    )}
-                                                    <button
-                                                        type="button"
-                                                        className="link"
-                                                        onClick={function (event) {
-                                                            event.stopPropagation();
-                                                            if (typeof value.func === "function") value.func();
-                                                            if (props.onActivate) props.onActivate({ node: row.node, column: column, value: value });
-                                                        }}
-                                                    >
-                                                        {value.label}
-                                                    </button>
-                                                </div>
+                                            <td key={column.dataIndex} className={(column.pinned ? "pinned " : "") + (isMatch ? "match" : "")} style={{ left: stickyLeft(column, index) }} onDoubleClick={function (event) { if (!column.editableFlag) return; event.stopPropagation(); setEditing({ id: row.id, dataIndex: column.dataIndex, value: value.label }); }}>
+                                                {isEditing ? <input value={editing.value} onClick={function (event) { event.stopPropagation(); }} onChange={function (event) { setEditing({ id: editing.id, dataIndex: editing.dataIndex, value: event.target.value }); }} onBlur={function () { var payload = editing; setEditing(null); if (props.onCellEdit) props.onCellEdit(payload); }} onKeyDown={function (event) { if (event.key !== "Enter") return; event.preventDefault(); var payload = editing; setEditing(null); if (props.onCellEdit) props.onCellEdit(payload); }} /> : column.dataIndex === "tree" ? (
+                                                    <div className="tree-cell" style={{ paddingLeft: row.depth * 16 }}>
+                                                        {row.hasChildren ? <button type="button" className={row.expanded ? "twist expanded" : "twist"} aria-expanded={row.expanded ? "true" : "false"} onClick={function (event) { event.stopPropagation(); setExpanded(function (current) { var next = Object.assign({}, current); next[row.id] = !row.expanded; return next; }); }}><span className="mark" /></button> : <span className="twist-gap" />}
+                                                        <button type="button" className="link" onClick={function (event) { event.stopPropagation(); if (typeof value.func === "function") value.func(); if (props.onActivate) props.onActivate({ node: row.node, column: column, value: value }); }}>{value.label}</button>
+                                                    </div>
+                                                ) : value.func ? <button type="button" className="link" onClick={function (event) { event.stopPropagation(); value.func(); if (props.onActivate) props.onActivate({ node: row.node, column: column, value: value }); }}>{value.label}</button> : value.label}
                                             </td>
                                         );
-                                    }
-                                    return (
-                                        <td key={column.dataIndex}>
-                                            {value.func ? (
-                                                <button
-                                                    type="button"
-                                                    className="link"
-                                                    onClick={function (event) {
-                                                        event.stopPropagation();
-                                                        value.func();
-                                                        if (props.onActivate) props.onActivate({ node: row.node, column: column, value: value });
-                                                    }}
-                                                >
-                                                    {value.label}
-                                                </button>
-                                            ) : (
-                                                value.label
-                                            )}
-                                        </td>
-                                    );
-                                })}
-                            </tr>
-                        );
-                    })
-                ) : (
-                    <tr>
-                        <td colSpan={columns.length + (props.showSelectionCheckBoxesFlag ? 1 : 0)} className="empty">
-                            {props.emptyText || "표시할 행이 없습니다."}
-                        </td>
-                    </tr>
-                )}
-            </tbody>
-        </table>
+                                    })}
+                                    {showMenuColumn ? <td><button type="button" className="row-menu" onClick={function (event) { openMenu(event, "row", row); }}>⋯</button></td> : null}
+                                </tr>
+                            );
+                        }) : <tr><td colSpan={prepared.visible.length + (showIndex ? 1 : 0) + (showChecks ? 1 : 0) + (showMenuColumn ? 1 : 0)} className="empty">{props.emptyText || "표시할 행이 없습니다."}</td></tr>}
+                    </tbody>
+                </table>
+            </div>
+            {menu ? (
+                <div className="enx-grid-menu" style={{ left: menu.x, top: menu.y }} onClick={function (event) { event.stopPropagation(); }}>
+                    {menu.kind === "header" ? (
+                        <div>
+                            <button type="button" onClick={function () { onMenu("asc"); }}>오름차순</button>
+                            <button type="button" onClick={function () { onMenu("desc"); }}>내림차순</button>
+                            <button type="button" onClick={function () { onMenu("clear-sort"); }}>이 열 정렬 해제</button>
+                            <button type="button" onClick={function () { onMenu("hide"); }}>열 숨기기</button>
+                            <button type="button" onClick={function () { onMenu("pin"); }}>{layout.pinned[menu.payload.dataIndex] ? "고정 해제" : "왼쪽 고정"}</button>
+                            <button type="button" onClick={function () { onMenu("fit"); }}>너비 맞춤</button>
+                            <button type="button" onClick={function () { onMenu("reset-width"); }}>너비 초기화</button>
+                        </div>
+                    ) : null}
+                    {menu.kind === "row" ? <button type="button" onClick={function () { onMenu("open"); }}>열기</button> : null}
+                    {menu.kind === "columns" ? prepared.visible.concat(prepared.hidden).map(function (column) {
+                        return <button key={column.dataIndex} type="button" onClick={function () { persist(toggleFlag(layout, column.dataIndex, "hidden")); }}>{layout.hidden[column.dataIndex] ? "보이기" : "숨기기"} {column.text}</button>;
+                    }) : null}
+                </div>
+            ) : null}
+        </div>
     );
 }

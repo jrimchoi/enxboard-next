@@ -1,6 +1,6 @@
 # ENXBoardNext
 
-같은 게시판의 Next.js 14 페이지다. JSX는 Next가 컴파일하고, 화면 상태는 `useState`다. 목록 그리드는 `components/DataGrid.js`이고, 트리 접기·열 정렬·행 선택 계산은 `lib/grid.js`다. 이 계산 파일은 Vue, React 앱과 같다. 글 저장 코드는 `lib/data.js`에 있다.
+같은 게시판의 Next.js 14 페이지다. JSX는 Next가 컴파일하고, 화면 상태는 `useState`다. 목록 그리드는 `components/DataGrid.js`이고, 열 너비·순서·고정·숨기기·필터·다중 정렬·행 선택과 순서 계산은 `lib/grid.js`다. 이 계산 파일은 Vue, React 앱과 같다. 너비는 `enx-grid:enxboard`에 남는다. 글 저장 코드는 `lib/data.js`에 있다.
 
 아이콘 CSS와 글꼴은 `public/core`에 있다. 개발 서버와 정적 내보내기 모두 `/core/wux-3ds-fonticons.css`로 읽는다. `basePath`는 없다. 미리보기 주소는 서버 루트다.
 

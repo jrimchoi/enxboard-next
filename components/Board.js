@@ -1,10 +1,10 @@
 import { DataGrid } from "./DataGrid";
 
 var columns = [
-    { text: "제목", dataIndex: "tree" },
-    { text: "작성자", dataIndex: "author" },
-    { text: "날짜", dataIndex: "date" },
-    { text: "태그", dataIndex: "tags" },
+    { text: "제목", dataIndex: "tree", width: 280, editableFlag: true },
+    { text: "작성자", dataIndex: "author", width: 120, editableFlag: true },
+    { text: "날짜", dataIndex: "date", typeRepresentation: "date", width: 120, editableFlag: true },
+    { text: "태그", dataIndex: "tags", width: 160, editableFlag: true },
 ];
 
 function icon(name) {
@@ -78,13 +78,18 @@ export function Board(props) {
                     </p>
                     <div className="grid-host">
                         <DataGrid
+                            identifier="enxboard"
                             rows={state.list.items}
                             columns={columns}
                             sortModel={state.sort}
-                            rowSelection="single"
-                            showSelectionCheckBoxesFlag
-                            onSort={function (sortModel) { command("sort", { sortModel: sortModel }); }}
+                            filters={state.filters}
+                            findQuery={state.query}
+                            rowSelection="multiple"
                             emptyText="검색 결과가 없습니다."
+                            onSort={function (sortModel) { command("sort", { sortModel: sortModel }); }}
+                            onFilter={function (filters) { command("filter", { filters: filters }); }}
+                            onReorder={function (move) { command("reorder", move); }}
+                            onCellEdit={function (edit) { command("cell-edit", edit); }}
                             onActivate={function (event) { command("open", { id: event.node.id }); }}
                         />
                     </div>
