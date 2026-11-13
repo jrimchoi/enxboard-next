@@ -18,7 +18,8 @@
 
 .enx-grid th button.header {
     display: block;
-    max-width: 100%;
+    width: calc(100% - 10px);
+    max-width: calc(100% - 10px);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -195,11 +196,11 @@
     right: 0;
     top: 0;
     bottom: 0;
-    width: 5px;
+    width: 10px;
     cursor: col-resize;
     user-select: none;
     background: transparent;
-    z-index: 1;
+    z-index: 6;
 }
 
 .column-resizer:hover,

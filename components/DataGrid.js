@@ -55,6 +55,10 @@ export function DataGrid(props) {
     var hBarRef = useRef(hBar);
     hBarRef.current = hBar;
     var measureRef = useRef(function () {});
+    var dragState = useState(null);
+    var dragWidth = dragState[0];
+    var setDragWidth = dragState[1];
+    var dragRef = useRef(null);
 
     var prepared = useMemo(function () { return layoutColumns(columns, layout); }, [columns, layout]);
     var viewRows = useMemo(function () { return visibleRows(rows, sortModel, expanded); }, [rows, sortModel, expanded]);
@@ -76,6 +80,7 @@ export function DataGrid(props) {
     });
 
     function measureHBar() {
+        if (dragRef.current) return;
         var el = scrollerRef.current;
         if (!el) return;
         var max = el.scrollWidth - el.clientWidth;
@@ -204,15 +209,25 @@ export function DataGrid(props) {
         var startWidth = headerCell.offsetWidth;
         resizer.classList.add("resizing");
         document.body.style.cursor = "col-resize";
+        function widthAt(pageX) {
+            return Math.max(50, Math.round(startWidth + pageX - startX));
+        }
         function move(moveEvent) {
-            applyColumnWidth(headerCell, startWidth + moveEvent.pageX - startX);
+            var width = widthAt(moveEvent.pageX);
+            dragRef.current = { dataIndex: column.dataIndex, width: width };
+            setDragWidth(dragRef.current);
+            applyColumnWidth(headerCell, width);
         }
         function up(upEvent) {
             document.removeEventListener("mousemove", move);
             document.removeEventListener("mouseup", up);
             document.body.style.cursor = "";
             resizer.classList.remove("resizing");
-            persist(resizeColumn(layout, column.dataIndex, startWidth + upEvent.pageX - startX));
+            var width = widthAt(upEvent.pageX);
+            dragRef.current = null;
+            setDragWidth(null);
+            persist(resizeColumn(layout, column.dataIndex, width));
+            measureRef.current();
         }
         document.addEventListener("mousemove", move);
         document.addEventListener("mouseup", up);
@@ -250,7 +265,8 @@ export function DataGrid(props) {
     var showMenuColumn = props.showContextualMenuColumnFlag !== false;
     var allChecked = viewRows.length > 0 && viewRows.every(function (row) { return selected[row.id]; });
     function columnBox(column, index) {
-        return { width: column.width, minWidth: column.width, maxWidth: column.width, left: stickyLeft(column, index) };
+        var width = dragWidth && dragWidth.dataIndex === column.dataIndex ? dragWidth.width : column.width;
+        return { width: width, minWidth: width, maxWidth: width, left: stickyLeft(column, index) };
     }
 
     return (
